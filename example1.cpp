@@ -1,6 +1,8 @@
 #include <iostream>
 #include <Eigen/Core>
 #include "rehline.h"
+#include <fstream> 
+#include <iomanip>
 
 int main()
 {
@@ -26,15 +28,16 @@ int main()
 
     // Setting parameters
     double C = 100.0;
+    double rho = 1.0;
     int max_iter = 1000;
     double tol = 1e-5;
-    int shrink = 1;
+    int shrink = 0;
     int verbose = 0;
     int trace_freq = 100;
 
     // Run the solver
     rehline::ReHLineResult<Matrix> res;
-    rehline::rehline_svm(res, X, y, C, max_iter, tol, shrink, verbose, trace_freq);
+    rehline::rehline_svm(res, X, y, C, max_iter, tol, rho, shrink, verbose, trace_freq);
 
     // Print the estimated beta
     std::cout << "niter = " << res.niter << "\nbeta =\n" << res.beta << std::endl;
