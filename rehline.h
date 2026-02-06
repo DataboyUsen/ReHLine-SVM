@@ -167,6 +167,7 @@ private:
 
     // Free variable sets
     std::vector<Index> m_fv_feas;
+    std::vector<Index> m_fv_l1mu;
     std::vector<std::pair<Index, Index>> m_fv_relu;
     std::vector<std::pair<Index, Index>> m_fv_rehu;
 
@@ -582,6 +583,66 @@ private:
         fv_set.swap(new_set);
     }
 
+    // Determine whether to shrink mu, and compute the projected gradient (PG)
+    // Shrink if (mu=0 and grad>ub) or (mu=rho and grad<lb)
+    // PG is zero if (mu=0 and grad>=0) or (mu=rho and grad<=0)
+    inline bool pg_mu(Scalar mu, Scalar grad, Scalar rho, Scalar lb, Scalar ub, Scalar& pg) const
+    {
+        pg = ((mu == Scalar(0) && grad >= Scalar(0)) || (mu == rho && grad <= Scalar(0))) ?
+             Scalar(0) :
+             grad;
+        const bool shrink = (mu == Scalar(0) && grad > ub) || (mu == rho && grad < lb);
+        return shrink;
+    }
+    // Update mu and beta
+    // Overloaded version based on free variable set
+    inline void update_mu_beta(std::vector<Index>& fv_set, Scalar& min_pg, Scalar& max_pg)
+    {
+        if (m_rho <= 0)
+            return;
+
+        // Permutation
+        internal::random_shuffle(fv_set.begin(), fv_set.end(), m_rng);
+        // New free variable set
+        std::vector<Index> new_set;
+        new_set.reserve(fv_set.size());
+
+        // Compute shrinking thresholds lb and ub
+        // More details explained in update_xi_beta()
+        constexpr Scalar Inf = std::numeric_limits<Scalar>::infinity();
+        const Scalar lb = (min_pg < Scalar(0)) ? min_pg : -Inf;
+        const Scalar ub = (max_pg > Scalar(0)) ? max_pg : Inf;
+        // Compute minimum and maximum projected gradient (PG) for this round
+        min_pg = Inf;
+        max_pg = -Inf;
+        for (auto j: fv_set)
+        {
+            const Scalar mu_j = m_mu[j];
+
+            // Compute g_j
+            const Scalar g_j = m_beta[j];
+            // PG and shrink
+            Scalar pg;
+            const bool shrink = pg_mu(mu_j, g_j, m_rho, lb, ub, pg);
+            if (shrink)
+               continue;
+
+            // Update PG bounds
+            max_pg = std::max(max_pg, pg);
+            min_pg = std::min(min_pg, pg);
+            // Compute new mu_j
+            const Scalar candid = mu_j - g_j * Scalar(0.5);
+            const Scalar newmu = std::max(Scalar(0), std::min(m_rho, candid));
+            // Update mu and beta
+            m_mu[j] = newmu;
+            m_beta[j] += Scalar(2.0) * (newmu - mu_j);
+
+            // Add to new free variable set
+            new_set.push_back(j);
+        }
+        // Update free variable set
+        fv_set.swap(new_set);
+    }
 public:
     ReHLineSolver(ConstRefMat X, ConstRefMat U, ConstRefMat V,
                   ConstRefMat S, ConstRefMat T, ConstRefMat Tau,
@@ -766,13 +827,14 @@ public:
         internal::reset_fv_set(m_fv_feas, m_K);
         internal::reset_fv_set(m_fv_relu, m_L, m_n);
         internal::reset_fv_set(m_fv_rehu, m_H, m_n);
+        internal::reset_fv_set(m_fv_l1mu, m_d);
 
         // Minimum and maximum projected gradients of dual variables in each outer iteration
         // These variables will be updated in update_*_beta() functions below
         // If some dual variables are not used, the corresponding pg variables
         // will always be zero, so that the related tests in pg_conv below return true values
-        Scalar xi_min_pg = Scalar(0), lambda_min_pg = Scalar(0), gamma_min_pg = Scalar(0);
-        Scalar xi_max_pg = Scalar(0), lambda_max_pg = Scalar(0), gamma_max_pg = Scalar(0);
+        Scalar xi_min_pg = Scalar(0), lambda_min_pg = Scalar(0), gamma_min_pg = Scalar(0), mu_min_pg = Scalar(0);
+        Scalar xi_max_pg = Scalar(0), lambda_max_pg = Scalar(0), gamma_max_pg = Scalar(0), mu_max_pg = Scalar(0);
 
         // Main iterations
         Index i = 0;
@@ -785,6 +847,7 @@ public:
             update_xi_beta(m_fv_feas, xi_min_pg, xi_max_pg);
             update_Lambda_beta(m_fv_relu, lambda_min_pg, lambda_max_pg);
             update_Gamma_beta(m_fv_rehu, gamma_min_pg, gamma_max_pg);
+            update_mu_beta(m_fv_l1mu, mu_min_pg, mu_max_pg);
 
             // Compute difference of xi and beta
             const Scalar xi_diff = (m_K > 0) ? (m_xi - old_xi).norm() : Scalar(0);
@@ -801,11 +864,15 @@ public:
                                  (std::abs(lambda_min_pg) < tol) &&
                                  (gamma_max_pg - gamma_min_pg < tol) &&
                                  (std::abs(gamma_max_pg) < tol) &&
-                                 (std::abs(gamma_min_pg) < tol);
+                                 (std::abs(gamma_min_pg) < tol) &&
+                                 (mu_max_pg - mu_min_pg < tol) &&
+                                 (std::abs(mu_max_pg) < tol) &&
+                                 (std::abs(mu_min_pg) < tol);
             // Whether we are using all variables
             const bool all_vars = (m_fv_feas.size() == static_cast<std::size_t>(m_K)) &&
                                   (m_fv_relu.size() == static_cast<std::size_t>(m_L * m_n)) &&
-                                  (m_fv_rehu.size() == static_cast<std::size_t>(m_H * m_n));
+                                  (m_fv_rehu.size() == static_cast<std::size_t>(m_H * m_n)) &&
+                                  (m_fv_l1mu.size() == static_cast<std::size_t>(m_d));
 
             // Print progress
             if (verbose && (i % trace_freq == 0))
@@ -841,8 +908,9 @@ public:
                 internal::reset_fv_set(m_fv_feas, m_K);
                 internal::reset_fv_set(m_fv_relu, m_L, m_n);
                 internal::reset_fv_set(m_fv_rehu, m_H, m_n);
-                xi_min_pg = lambda_min_pg = gamma_min_pg = Scalar(0);
-                xi_max_pg = lambda_max_pg = gamma_max_pg = Scalar(0);
+                internal::reset_fv_set(m_fv_l1mu, m_d);
+                xi_min_pg = lambda_min_pg = gamma_min_pg = mu_min_pg = Scalar(0);
+                xi_max_pg = lambda_max_pg = gamma_max_pg = mu_max_pg = Scalar(0);
                 // Also recompute beta to improve precision
                 // set_primal();
                 continue;
