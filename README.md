@@ -8,7 +8,7 @@ header file [rehline.h](rehline.h), and its only dependency is the
 **ReHLine-SVM** solves the following optimization problem:
 
 $$
-  \min_{\mathbf{\beta} \in \mathbb{R}^d} \frac{C}{n} \sum_{i=1}^n ( 1 - y_i \mathbf{\beta}^\intercal \mathbf{x}_ i )_+ + \frac{1}{2} \Vert \mathbf{\beta} \Vert_2^2,
+  \min_{\mathbf{\beta} \in \mathbb{R}^d} \frac{C}{n} \sum_{i=1}^n ( 1 - y_i \mathbf{\beta}^\intercal \mathbf{x}_ i )_+ + \frac{1}{2} \Vert \mathbf{\beta} \Vert_2^2 + \rho \Vert \mathbf{\beta} \Vert_1,
 $$
 
 where $\mathbf{x}_ i \in \mathbb{R}^d$ is a feature vector, $y_i \in \\{-1, 1\\}$ is a binary label, and $(x)_+=\max\\{x,0\\}$.
@@ -22,6 +22,7 @@ and then call the `rehline::rehline_svm()` function:
 ```cpp
 // Setting parameters
 double C = 100.0;
+double rho = 0.0;
 int max_iter = 1000;
 double tol = 1e-5;
 int shrink = 1;
@@ -30,7 +31,7 @@ int trace_freq = 100;
 
 // Run the solver
 rehline::ReHLineResult<Matrix> res;
-rehline::rehline_svm(res, X, y, C, max_iter, tol, shrink, verbose, trace_freq);
+rehline::rehline_svm(res, X, y, C, max_iter, tol, rho, shrink, verbose, trace_freq);
 ```
 
 The variable `X` is a matrix of dimension $n\times d$, and `y`
@@ -182,7 +183,7 @@ objfn(liblinear) = 58.0185
 The core of this library is the function
 
 ```cpp
-rehline::rehline_svm(result, X, y, C, max_iter, tol, shrink, verbose, trace_freq, cout)
+rehline::rehline_svm(result, X, y, C, max_iter, tol, rho, shrink, verbose, trace_freq, cout)
 ```
 
 The meaning of each argument is as follows:
@@ -193,6 +194,7 @@ The meaning of each argument is as follows:
 - `C`: (input) a scalar standing for the cost parameter.
 - `max_iter`: (input) an integer representing the maximum number of iterations.
 - `tol`: (input) a scalar giving the convergence tolerance.
+- `rho`: (input) a scalar standing for the strength of $l_1$ penalty.
 - `shrink`: (input) if it is a positive integer, then a shrinking scheme is used to accelerate the algorithm, and the value of this argument is used as a random seed; otherwise, the vanilla algorithm is used.
 - `verbose`: (input) level of verbosity, taking values of 0, 1, or 2.
 - `trace_freq` (input) trace objective function values every `trace_freq` iterations; only works if `verbose > 0`.

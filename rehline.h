@@ -208,13 +208,13 @@ private:
         // ReLU part
         if (m_L > 0)
         {
-            result += (m_U.cwiseProduct(Xbeta.transpose().replicate(m_L, 1)) +
+            result += (m_U.cwiseProduct(Xbeta.transpose().replicate(1, m_L)) +
                 m_V).cwiseMax(Scalar(0)).sum();
         }
         // ReHU part
         if (m_H > 0)
         {
-            const Matrix z = (m_S.cwiseProduct(Xbeta.transpose().replicate(m_H, 1)) +
+            const Matrix z = (m_S.cwiseProduct(Xbeta.transpose().replicate(1, m_H)) +
                 m_T).cwiseMax(Scalar(0));
             result += (z.array() <= m_Tau.array()).select(
                 z.array().square() * Scalar(0.5),
