@@ -157,6 +157,7 @@ int main(int argc, char *argv[])
 
     // Setting parameters
     Scalar C = 100.0;
+    Scalar rho = 0.0;
     int max_iter = 10000;
     Scalar tol = 1e-5;
     int shrink = 1;
@@ -166,7 +167,7 @@ int main(int argc, char *argv[])
     // Run the solver
     start = std::chrono::high_resolution_clock::now();
     rehline::ReHLineResult<Matrix> res;
-    rehline::rehline_svm(res, X, y, C, max_iter, tol, shrink, verbose, trace_freq);
+    rehline::rehline_svm(res, X, y, C, max_iter, tol, rho, shrink, verbose, trace_freq);
     end = std::chrono::high_resolution_clock::now();
     elapsed = end - start;
     std::cout << "Computation time: " << elapsed.count() << " seconds" << std::endl << std::endl;
