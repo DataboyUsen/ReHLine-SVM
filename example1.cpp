@@ -28,10 +28,10 @@ int main()
 
     // Setting parameters
     double C = 100.0;
-    double rho = 1.0;
+    double rho = 0.0;
     int max_iter = 1000;
     double tol = 1e-5;
-    int shrink = 0;
+    int shrink = 1;
     int verbose = 0;
     int trace_freq = 100;
 
